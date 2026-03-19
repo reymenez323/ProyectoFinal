@@ -47,7 +47,8 @@ namespace ProyectoFinal.Controllers
                 Nombre = request.Nombre,
                 Correo = request.Correo,
                 FechaDeNacimiento = request.FechaDeNacimiento,
-                PasswordHash = PasswordHelper.HashPassword(request.Password)
+                PasswordHash = PasswordHelper.HashPassword(request.Password),
+                FechaDeRegistro = DateTime.UtcNow
             };
 
             _context.Usuarios.Add(usuario);
@@ -63,7 +64,8 @@ namespace ProyectoFinal.Controllers
                     usuario.Id,
                     usuario.Nombre,
                     usuario.Correo,
-                    usuario.FechaDeNacimiento
+                    usuario.FechaDeNacimiento,
+                    usuario.FechaDeRegistro
                 }
             });
         }

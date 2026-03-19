@@ -4,206 +4,221 @@ using Microsoft.EntityFrameworkCore;
 using ProyectoFinal.Data;
 using ProyectoFinal.Models;
 
-namespace ProyectoFinal.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-[Authorize]
-public class ProductosController : ControllerBase
+namespace ProyectoFinal.Controllers
 {
-    private readonly AppDbContext _context;
-
-    public ProductosController(AppDbContext context)
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize]
+    public class ProductosController : ControllerBase
     {
-        _context = context;
-    }
+        private readonly AppDbContext _context;
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Producto>>> GetAll()
-    {
-        var productos = await _context.Productos
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .AsNoTracking()
-            .ToListAsync();
-
-        return Ok(productos);
-    }
-
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<Producto>> GetById(int id)
-    {
-        var producto = await _context.Productos
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == id);
-
-        return producto is null ? NotFound(new { message = "Producto no encontrado." }) : Ok(producto);
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<Producto>> Create([FromBody] Producto producto)
-    {
-        if (!ModelState.IsValid)
+        public ProductosController(AppDbContext context)
         {
-            return BadRequest(ModelState);
+            _context = context;
         }
 
-        if (!await _context.Categorias.AnyAsync(c => c.Id == producto.IdCategoria))
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<object>>> GetProductos()
         {
-            return BadRequest(new { message = "La categoría especificada no existe." });
+            var productos = await _context.Productos
+                .Include(p => p.Categoria)
+                .Include(p => p.Proveedor)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Nombre,
+                    p.Precio,
+                    p.Stock,
+                    p.IdCategoria,
+                    Categoria = p.Categoria != null ? p.Categoria.Nombre : null,
+                    p.IdProveedor,
+                    Proveedor = p.Proveedor != null ? p.Proveedor.Nombre : null
+                })
+                .ToListAsync();
+
+            return Ok(productos);
         }
 
-        if (!await _context.Proveedores.AnyAsync(p => p.Id == producto.IdProveedor))
+        [HttpGet("{id}")]
+        public async Task<ActionResult<object>> GetProducto(int id)
         {
-            return BadRequest(new { message = "El proveedor especificado no existe." });
+            var producto = await _context.Productos
+                .Include(p => p.Categoria)
+                .Include(p => p.Proveedor)
+                .Where(p => p.Id == id)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Nombre,
+                    p.Precio,
+                    p.Stock,
+                    p.IdCategoria,
+                    Categoria = p.Categoria != null ? p.Categoria.Nombre : null,
+                    p.IdProveedor,
+                    Proveedor = p.Proveedor != null ? p.Proveedor.Nombre : null
+                })
+                .FirstOrDefaultAsync();
+
+            if (producto == null)
+                return NotFound(new { mensaje = "Producto no encontrado." });
+
+            return Ok(producto);
         }
 
-        _context.Productos.Add(producto);
-        await _context.SaveChangesAsync();
-
-        var created = await _context.Productos
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .FirstAsync(p => p.Id == producto.Id);
-
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
-    }
-
-    [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(int id, [FromBody] Producto producto)
-    {
-        if (id != producto.Id)
+        [HttpPost]
+        public async Task<ActionResult> PostProducto([FromBody] Producto producto)
         {
-            return BadRequest(new { message = "El ID de la ruta no coincide con el ID del objeto." });
-        }
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
+            var categoriaExiste = await _context.Categorias.AnyAsync(c => c.Id == producto.IdCategoria);
+            if (!categoriaExiste)
+                return BadRequest(new { mensaje = "La categoría indicada no existe." });
 
-        var current = await _context.Productos.FindAsync(id);
-        if (current is null)
-        {
-            return NotFound(new { message = "Producto no encontrado." });
-        }
+            var proveedorExiste = await _context.Proveedores.AnyAsync(p => p.Id == producto.IdProveedor);
+            if (!proveedorExiste)
+                return BadRequest(new { mensaje = "El proveedor indicado no existe." });
 
-        if (!await _context.Categorias.AnyAsync(c => c.Id == producto.IdCategoria))
-        {
-            return BadRequest(new { message = "La categoría especificada no existe." });
-        }
+            _context.Productos.Add(producto);
+            await _context.SaveChangesAsync();
 
-        if (!await _context.Proveedores.AnyAsync(p => p.Id == producto.IdProveedor))
-        {
-            return BadRequest(new { message = "El proveedor especificado no existe." });
-        }
-
-        current.Nombre = producto.Nombre;
-        current.Precio = producto.Precio;
-        current.Stock = producto.Stock;
-        current.IdCategoria = producto.IdCategoria;
-        current.IdProveedor = producto.IdProveedor;
-
-        await _context.SaveChangesAsync();
-        return NoContent();
-    }
-
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(int id)
-    {
-        var producto = await _context.Productos.FindAsync(id);
-        if (producto is null)
-        {
-            return NotFound(new { message = "Producto no encontrado." });
-        }
-
-        _context.Productos.Remove(producto);
-        await _context.SaveChangesAsync();
-        return NoContent();
-    }
-
-    [HttpGet("estadisticas")]
-    public async Task<IActionResult> GetEstadisticas()
-    {
-        if (!await _context.Productos.AnyAsync())
-        {
-            return Ok(new
+            return CreatedAtAction(nameof(GetProducto), new { id = producto.Id }, new
             {
-                message = "No hay productos registrados.",
-                precioMasAlto = (object?)null,
-                precioMasBajo = (object?)null,
-                sumaTotalPrecios = 0,
-                precioPromedio = 0,
-                cantidadTotalProductos = 0
+                producto.Id,
+                producto.Nombre,
+                producto.Precio,
+                producto.Stock,
+                producto.IdCategoria,
+                producto.IdProveedor
             });
         }
 
-        var precioMasAlto = await _context.Productos.MaxAsync(p => p.Precio);
-        var precioMasBajo = await _context.Productos.MinAsync(p => p.Precio);
-        var sumaTotal = await _context.Productos.SumAsync(p => p.Precio);
-        var promedio = await _context.Productos.AverageAsync(p => p.Precio);
-
-        var productoMasAlto = await _context.Productos.FirstOrDefaultAsync(p => p.Precio == precioMasAlto);
-        var productoMasBajo = await _context.Productos.FirstOrDefaultAsync(p => p.Precio == precioMasBajo);
-
-        return Ok(new
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutProducto(int id, [FromBody] Producto producto)
         {
-            precioMasAlto = new { producto = productoMasAlto?.Nombre, precio = precioMasAlto },
-            precioMasBajo = new { producto = productoMasBajo?.Nombre, precio = precioMasBajo },
-            sumaTotalPrecios = sumaTotal,
-            precioPromedio = Math.Round(promedio, 2),
-            cantidadTotalProductos = await _context.Productos.CountAsync()
-        });
-    }
+            if (id != producto.Id)
+                return BadRequest(new { mensaje = "El id de la ruta no coincide con el id del cuerpo." });
 
-    [HttpGet("por-categoria/{categoriaId:int}")]
-    public async Task<IActionResult> GetPorCategoria(int categoriaId)
-    {
-        var categoria = await _context.Categorias.FindAsync(categoriaId);
-        if (categoria is null)
-        {
-            return NotFound(new { message = "La categoría especificada no existe." });
+            var existe = await _context.Productos.AnyAsync(p => p.Id == id);
+            if (!existe)
+                return NotFound(new { mensaje = "Producto no encontrado." });
+
+            var categoriaExiste = await _context.Categorias.AnyAsync(c => c.Id == producto.IdCategoria);
+            if (!categoriaExiste)
+                return BadRequest(new { mensaje = "La categoría indicada no existe." });
+
+            var proveedorExiste = await _context.Proveedores.AnyAsync(p => p.Id == producto.IdProveedor);
+            if (!proveedorExiste)
+                return BadRequest(new { mensaje = "El proveedor indicado no existe." });
+
+            _context.Entry(producto).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Producto actualizado correctamente." });
         }
 
-        var productos = await _context.Productos
-            .Where(p => p.IdCategoria == categoriaId)
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .AsNoTracking()
-            .ToListAsync();
-
-        return Ok(new { categoria = categoria.Nombre, cantidad = productos.Count, productos });
-    }
-
-    [HttpGet("por-proveedor/{proveedorId:int}")]
-    public async Task<IActionResult> GetPorProveedor(int proveedorId)
-    {
-        var proveedor = await _context.Proveedores.FindAsync(proveedorId);
-        if (proveedor is null)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteProducto(int id)
         {
-            return NotFound(new { message = "El proveedor especificado no existe." });
+            var producto = await _context.Productos.FindAsync(id);
+
+            if (producto == null)
+                return NotFound(new { mensaje = "Producto no encontrado." });
+
+            _context.Productos.Remove(producto);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Producto eliminado correctamente." });
         }
 
-        var productos = await _context.Productos
-            .Where(p => p.IdProveedor == proveedorId)
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .AsNoTracking()
-            .ToListAsync();
-
-        return Ok(new { proveedor = proveedor.Nombre, cantidad = productos.Count, productos });
-    }
-
-    [HttpGet("cantidad-total")]
-    public async Task<IActionResult> GetCantidadTotal()
-    {
-        var cantidad = await _context.Productos.CountAsync();
-        return Ok(new
+        [HttpGet("estadisticas")]
+        public async Task<IActionResult> GetEstadisticas()
         {
-            cantidadTotalProductos = cantidad,
-            stockTotal = await _context.Productos.SumAsync(p => p.Stock)
-        });
+            var productos = await _context.Productos.ToListAsync();
+
+            if (!productos.Any())
+            {
+                return Ok(new
+                {
+                    productoMasCaro = (object?)null,
+                    productoMasBarato = (object?)null,
+                    sumaTotalPrecios = 0,
+                    promedioPrecios = 0
+                });
+            }
+
+            var productoMasCaro = productos.OrderByDescending(p => p.Precio).First();
+            var productoMasBarato = productos.OrderBy(p => p.Precio).First();
+            var sumaTotalPrecios = productos.Sum(p => p.Precio);
+            var promedioPrecios = productos.Average(p => p.Precio);
+
+            return Ok(new
+            {
+                productoMasCaro = new
+                {
+                    productoMasCaro.Id,
+                    productoMasCaro.Nombre,
+                    productoMasCaro.Precio
+                },
+                productoMasBarato = new
+                {
+                    productoMasBarato.Id,
+                    productoMasBarato.Nombre,
+                    productoMasBarato.Precio
+                },
+                sumaTotalPrecios,
+                promedioPrecios
+            });
+        }
+
+        [HttpGet("por-categoria/{idCategoria}")]
+        public async Task<IActionResult> GetProductosPorCategoria(int idCategoria)
+        {
+            var existeCategoria = await _context.Categorias.AnyAsync(c => c.Id == idCategoria);
+            if (!existeCategoria)
+                return NotFound(new { mensaje = "Categoría no encontrada." });
+
+            var productos = await _context.Productos
+                .Where(p => p.IdCategoria == idCategoria)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Nombre,
+                    p.Precio,
+                    p.Stock
+                })
+                .ToListAsync();
+
+            return Ok(productos);
+        }
+
+        [HttpGet("por-proveedor/{idProveedor}")]
+        public async Task<IActionResult> GetProductosPorProveedor(int idProveedor)
+        {
+            var existeProveedor = await _context.Proveedores.AnyAsync(p => p.Id == idProveedor);
+            if (!existeProveedor)
+                return NotFound(new { mensaje = "Proveedor no encontrado." });
+
+            var productos = await _context.Productos
+                .Where(p => p.IdProveedor == idProveedor)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Nombre,
+                    p.Precio,
+                    p.Stock
+                })
+                .ToListAsync();
+
+            return Ok(productos);
+        }
+
+        [HttpGet("cantidad-total")]
+        public async Task<IActionResult> GetCantidadTotal()
+        {
+            var total = await _context.Productos.CountAsync();
+            return Ok(new { cantidadTotalProductos = total });
+        }
     }
 }

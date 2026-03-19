@@ -4,103 +4,112 @@ using Microsoft.EntityFrameworkCore;
 using ProyectoFinal.Data;
 using ProyectoFinal.Models;
 
-namespace ProyectoFinal.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-[Authorize]
-public class CategoriasController : ControllerBase
+namespace ProyectoFinal.Controllers
 {
-    private readonly AppDbContext _context;
-
-    public CategoriasController(AppDbContext context)
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize]
+    public class CategoriasController : ControllerBase
     {
-        _context = context;
-    }
+        private readonly AppDbContext _context;
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Categoria>>> GetAll()
-    {
-        return Ok(await _context.Categorias.AsNoTracking().ToListAsync());
-    }
-
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<Categoria>> GetById(int id)
-    {
-        var categoria = await _context.Categorias.FindAsync(id);
-        return categoria is null ? NotFound(new { message = "Categoría no encontrada." }) : Ok(categoria);
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<Categoria>> Create([FromBody] Categoria categoria)
-    {
-        if (!ModelState.IsValid)
+        public CategoriasController(AppDbContext context)
         {
-            return BadRequest(ModelState);
+            _context = context;
         }
 
-        var nombre = categoria.Nombre.Trim();
-        var exists = await _context.Categorias.AnyAsync(c => c.Nombre == nombre);
-        if (exists)
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<object>>> GetCategorias()
         {
-            return BadRequest(new { message = "Ya existe una categoría con ese nombre." });
+            var categorias = await _context.Categorias
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Nombre
+                })
+                .ToListAsync();
+
+            return Ok(categorias);
         }
 
-        categoria.Nombre = nombre;
-        _context.Categorias.Add(categoria);
-        await _context.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(GetById), new { id = categoria.Id }, categoria);
-    }
-
-    [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(int id, [FromBody] Categoria categoria)
-    {
-        if (id != categoria.Id)
+        [HttpGet("{id}")]
+        public async Task<ActionResult<object>> GetCategoria(int id)
         {
-            return BadRequest(new { message = "El ID de la ruta no coincide con el ID del objeto." });
+            var categoria = await _context.Categorias
+                .Where(c => c.Id == id)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Nombre
+                })
+                .FirstOrDefaultAsync();
+
+            if (categoria == null)
+                return NotFound(new { mensaje = "Categoría no encontrada." });
+
+            return Ok(categoria);
         }
 
-        if (!ModelState.IsValid)
+        [HttpPost]
+        public async Task<ActionResult> PostCategoria([FromBody] Categoria categoria)
         {
-            return BadRequest(ModelState);
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var existe = await _context.Categorias
+                .AnyAsync(c => c.Nombre == categoria.Nombre);
+
+            if (existe)
+                return BadRequest(new { mensaje = "Ya existe una categoría con ese nombre." });
+
+            _context.Categorias.Add(categoria);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetCategoria), new { id = categoria.Id }, new
+            {
+                categoria.Id,
+                categoria.Nombre
+            });
         }
 
-        var current = await _context.Categorias.FindAsync(id);
-        if (current is null)
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutCategoria(int id, [FromBody] Categoria categoria)
         {
-            return NotFound(new { message = "Categoría no encontrada." });
+            if (id != categoria.Id)
+                return BadRequest(new { mensaje = "El id de la ruta no coincide con el id del cuerpo." });
+
+            var existe = await _context.Categorias.AnyAsync(c => c.Id == id);
+            if (!existe)
+                return NotFound(new { mensaje = "Categoría no encontrada." });
+
+            var duplicada = await _context.Categorias
+                .AnyAsync(c => c.Nombre == categoria.Nombre && c.Id != id);
+
+            if (duplicada)
+                return BadRequest(new { mensaje = "Ya existe otra categoría con ese nombre." });
+
+            _context.Entry(categoria).State = EntityState.Modified;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Categoría actualizada correctamente." });
         }
 
-        var nombre = categoria.Nombre.Trim();
-        var exists = await _context.Categorias.AnyAsync(c => c.Nombre == nombre && c.Id != id);
-        if (exists)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteCategoria(int id)
         {
-            return BadRequest(new { message = "Ya existe una categoría con ese nombre." });
+            var categoria = await _context.Categorias.FindAsync(id);
+
+            if (categoria == null)
+                return NotFound(new { mensaje = "Categoría no encontrada." });
+
+            var tieneProductos = await _context.Productos.AnyAsync(p => p.IdCategoria == id);
+            if (tieneProductos)
+                return BadRequest(new { mensaje = "No se puede eliminar la categoría porque tiene productos asociados." });
+
+            _context.Categorias.Remove(categoria);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "Categoría eliminada correctamente." });
         }
-
-        current.Nombre = nombre;
-        await _context.SaveChangesAsync();
-        return NoContent();
-    }
-
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(int id)
-    {
-        var categoria = await _context.Categorias.FindAsync(id);
-        if (categoria is null)
-        {
-            return NotFound(new { message = "Categoría no encontrada." });
-        }
-
-        var tieneProductos = await _context.Productos.AnyAsync(p => p.IdCategoria == id);
-        if (tieneProductos)
-        {
-            return BadRequest(new { message = "No se puede eliminar la categoría porque tiene productos asociados." });
-        }
-
-        _context.Categorias.Remove(categoria);
-        await _context.SaveChangesAsync();
-        return NoContent();
     }
 }

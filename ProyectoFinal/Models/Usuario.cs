@@ -24,6 +24,9 @@ namespace ProyectoFinal.Models
         [Required]
         public string PasswordHash { get; set; } = string.Empty;
 
+        [Required]
+        public DateTime FechaDeRegistro { get; set; }
+
         public string? RefreshToken { get; set; }
 
         public DateTime? RefreshTokenExpiryTime { get; set; }
