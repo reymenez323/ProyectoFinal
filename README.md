@@ -163,27 +163,3 @@ ProyectoFinal/Logs/usuarios-log.txt
 ```
 
 El endpoint `GET /api/usuarios/logs` devuelve el historial en formato JSON.
-
-## Capturas requeridas para la entrega
-
-Debes agregar al README las capturas de estas pruebas en Swagger o Postman:
-
-1. Registro de usuario
-2. Login
-3. Refresh token
-4. GET usuarios
-5. GET usuario por id
-6. PUT usuario
-7. DELETE usuario
-8. CRUD de categorías
-9. CRUD de proveedores
-10. CRUD de productos
-11. `GET /api/productos/estadisticas`
-12. `GET /api/productos/por-categoria/{id}`
-13. `GET /api/productos/por-proveedor/{id}`
-14. `GET /api/productos/cantidad-total`
-15. `GET /api/usuarios/logs`
-
-## Nota importante
-
-Este proyecto fue reorganizado para llamarse **ProyectoFinal** y adaptarse a **.NET 8** y **SQL Server**. Si vas a subirlo a GitHub, crea un repositorio nuevo llamado `ProyectoFinal` y luego sube esta carpeta.
