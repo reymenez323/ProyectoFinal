@@ -1,31 +1,31 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
-namespace ProyectoFinal.Models;
-
-public class Usuario
+namespace ProyectoFinal.Models
 {
-    public int Id { get; set; }
+    public class Usuario
+    {
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int Id { get; set; }
 
-    [Required]
-    [StringLength(100, MinimumLength = 2)]
-    public string Nombre { get; set; } = string.Empty;
+        [Required]
+        [StringLength(100, MinimumLength = 2)]
+        public string Nombre { get; set; } = string.Empty;
 
-    [Required]
-    [EmailAddress]
-    [StringLength(200)]
-    public string Correo { get; set; } = string.Empty;
+        [Required]
+        [EmailAddress]
+        [StringLength(150)]
+        public string Correo { get; set; } = string.Empty;
 
-    [Required]
-    public DateTime FechaDeNacimiento { get; set; }
+        [Required]
+        public DateTime FechaDeNacimiento { get; set; }
 
-    [Required]
-    [StringLength(200, MinimumLength = 6)]
-    public string PasswordHash { get; set; } = string.Empty;
+        [Required]
+        public string PasswordHash { get; set; } = string.Empty;
 
-    public DateTime FechaDeRegistro { get; set; } = DateTime.UtcNow;
+        public string? RefreshToken { get; set; }
 
-    [StringLength(500)]
-    public string? RefreshToken { get; set; }
-
-    public DateTime? RefreshTokenExpiryTime { get; set; }
+        public DateTime? RefreshTokenExpiryTime { get; set; }
+    }
 }

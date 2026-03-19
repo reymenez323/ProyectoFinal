@@ -5,134 +5,146 @@ using ProyectoFinal.DTOs;
 using ProyectoFinal.Models;
 using ProyectoFinal.Services;
 
-namespace ProyectoFinal.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class AuthController : ControllerBase
+namespace ProyectoFinal.Controllers
 {
-    private readonly AppDbContext _context;
-    private readonly TokenService _tokenService;
-    private readonly IUserLogService _userLogService;
-    private readonly IConfiguration _configuration;
-
-    public AuthController(
-        AppDbContext context,
-        TokenService tokenService,
-        IUserLogService userLogService,
-        IConfiguration configuration)
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AuthController : ControllerBase
     {
-        _context = context;
-        _tokenService = tokenService;
-        _userLogService = userLogService;
-        _configuration = configuration;
-    }
+        private readonly AppDbContext _context;
+        private readonly IJwtService _jwtService;
+        private readonly IJsonLogService _jsonLogService;
 
-    [HttpPost("register")]
-    public async Task<ActionResult<UsuarioResponseDto>> Register([FromBody] Usuario usuario)
-    {
-        if (!ModelState.IsValid)
+        public AuthController(
+            AppDbContext context,
+            IJwtService jwtService,
+            IJsonLogService jsonLogService)
         {
-            return BadRequest(ModelState);
+            _context = context;
+            _jwtService = jwtService;
+            _jsonLogService = jsonLogService;
         }
 
-        usuario.Correo = usuario.Correo.Trim().ToLowerInvariant();
-
-        var exists = await _context.Usuarios.AnyAsync(u => u.Correo == usuario.Correo);
-        if (exists)
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
         {
-            return BadRequest(new { message = "El correo electrónico ya está en uso." });
-        }
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-        usuario.PasswordHash = _tokenService.HashPassword(usuario.PasswordHash);
-        usuario.FechaDeRegistro = DateTime.UtcNow;
+            var correoExiste = await _context.Usuarios
+                .AnyAsync(u => u.Correo == request.Correo);
 
-        _context.Usuarios.Add(usuario);
-        await _context.SaveChangesAsync();
-        await _userLogService.AppendUserRegistrationLogAsync(usuario);
-
-        return CreatedAtAction(
-            nameof(UsuariosController.GetById),
-            "Usuarios",
-            new { id = usuario.Id },
-            new UsuarioResponseDto
+            if (correoExiste)
             {
-                Id = usuario.Id,
-                Nombre = usuario.Nombre,
-                Correo = usuario.Correo,
-                FechaDeNacimiento = usuario.FechaDeNacimiento,
-                FechaDeRegistro = usuario.FechaDeRegistro
+                return BadRequest(new
+                {
+                    mensaje = "El correo electrónico ya está en uso."
+                });
+            }
+
+            var usuario = new Usuario
+            {
+                Nombre = request.Nombre,
+                Correo = request.Correo,
+                FechaDeNacimiento = request.FechaDeNacimiento,
+                PasswordHash = PasswordHelper.HashPassword(request.Password)
+            };
+
+            _context.Usuarios.Add(usuario);
+            await _context.SaveChangesAsync();
+
+            await _jsonLogService.LogUsuarioAsync(usuario);
+
+            return Ok(new
+            {
+                mensaje = "Usuario registrado correctamente.",
+                usuario = new
+                {
+                    usuario.Id,
+                    usuario.Nombre,
+                    usuario.Correo,
+                    usuario.FechaDeNacimiento
+                }
             });
-    }
-
-    [HttpPost("login")]
-    public async Task<ActionResult<TokenResponseDto>> Login([FromBody] LoginRequestDto request)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
         }
 
-        var correo = request.Correo.Trim().ToLowerInvariant();
-        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Correo == correo);
-
-        if (usuario is null || !_tokenService.VerifyPassword(request.Password, usuario.PasswordHash))
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {
-            return Unauthorized(new { message = "Credenciales inválidas." });
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var passwordHash = PasswordHelper.HashPassword(request.Password);
+
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u =>
+                    u.Correo == request.Correo &&
+                    u.PasswordHash == passwordHash);
+
+            if (usuario == null)
+            {
+                return Unauthorized(new
+                {
+                    mensaje = "Credenciales inválidas."
+                });
+            }
+
+            var token = _jwtService.GenerateAccessToken(usuario);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+
+            usuario.RefreshToken = refreshToken;
+            usuario.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new AuthResponseDto
+            {
+                Token = token,
+                RefreshToken = refreshToken,
+                Expiration = DateTime.UtcNow.AddMinutes(60)
+            });
         }
 
-        var accessToken = _tokenService.GenerateAccessToken(usuario);
-        var refreshToken = _tokenService.GenerateRefreshToken();
-        var expiration = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_configuration["Jwt:AccessTokenExpirationMinutes"] ?? "30"));
-
-        usuario.RefreshToken = refreshToken;
-        usuario.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpirationDays"] ?? "7"));
-        await _context.SaveChangesAsync();
-
-        return Ok(new TokenResponseDto
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequestDto request)
         {
-            Token = accessToken,
-            RefreshToken = refreshToken,
-            Expiration = expiration,
-            Nombre = usuario.Nombre,
-            Correo = usuario.Correo
-        });
-    }
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-    [HttpPost("refresh")]
-    public async Task<ActionResult<TokenResponseDto>> Refresh([FromBody] RefreshTokenRequestDto request)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
+
+            if (usuario == null)
+            {
+                return Unauthorized(new
+                {
+                    mensaje = "Refresh token inválido."
+                });
+            }
+
+            if (!usuario.RefreshTokenExpiryTime.HasValue ||
+                usuario.RefreshTokenExpiryTime.Value <= DateTime.UtcNow)
+            {
+                return Unauthorized(new
+                {
+                    mensaje = "El refresh token ha expirado."
+                });
+            }
+
+            var newAccessToken = _jwtService.GenerateAccessToken(usuario);
+            var newRefreshToken = _jwtService.GenerateRefreshToken();
+
+            usuario.RefreshToken = newRefreshToken;
+            usuario.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new AuthResponseDto
+            {
+                Token = newAccessToken,
+                RefreshToken = newRefreshToken,
+                Expiration = DateTime.UtcNow.AddMinutes(60)
+            });
         }
-
-        var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.RefreshToken == request.RefreshToken);
-        if (usuario is null)
-        {
-            return Unauthorized(new { message = "Refresh token inválido." });
-        }
-
-        if (!usuario.RefreshTokenExpiryTime.HasValue || usuario.RefreshTokenExpiryTime.Value <= DateTime.UtcNow)
-        {
-            return Unauthorized(new { message = "Refresh token expirado." });
-        }
-
-        var newAccessToken = _tokenService.GenerateAccessToken(usuario);
-        var newRefreshToken = _tokenService.GenerateRefreshToken();
-        var expiration = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_configuration["Jwt:AccessTokenExpirationMinutes"] ?? "30"));
-
-        usuario.RefreshToken = newRefreshToken;
-        usuario.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpirationDays"] ?? "7"));
-        await _context.SaveChangesAsync();
-
-        return Ok(new TokenResponseDto
-        {
-            Token = newAccessToken,
-            RefreshToken = newRefreshToken,
-            Expiration = expiration,
-            Nombre = usuario.Nombre,
-            Correo = usuario.Correo
-        });
     }
 }
